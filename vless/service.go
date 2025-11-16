@@ -1,12 +1,18 @@
 package vless
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"net"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
 
-	"github.com/sagernet/sing-vmess"
+	vmess "github.com/Overwhelmed44/dynamic-vless"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
@@ -23,6 +29,8 @@ type Service[T comparable] struct {
 	userFlow map[T]string
 	logger   logger.Logger
 	handler  Handler
+	cache    *ProfileCache
+	fetchURL string
 }
 
 type Handler interface {
@@ -31,9 +39,17 @@ type Handler interface {
 }
 
 func NewService[T comparable](logger logger.Logger, handler Handler) *Service[T] {
+	cache, err := strconv.Atoi(os.Getenv("CACHE_SIZE"))
+	if err != nil || cache == 0 {
+		cache = 1000
+	}
+	fetchURL := os.Getenv("FETCH_URL")
+
 	return &Service[T]{
-		logger:  logger,
-		handler: handler,
+		logger:   logger,
+		handler:  handler,
+		cache:    NewProfileCache(cache),
+		fetchURL: fetchURL,
 	}
 }
 
@@ -57,12 +73,59 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 	if err != nil {
 		return err
 	}
-	user, loaded := s.userMap[request.UUID]
-	if !loaded {
-		return E.New("unknown UUID: ", uuid.FromBytesOrNil(request.UUID[:]))
+
+	// fetching profile
+
+	profileUUID := uuid.FromBytesOrNil(request.UUID[:])
+	if profileUUID.IsNil() {
+		return E.New()
 	}
+
+	isCached := s.cache.IsCached(profileUUID.String())
+	diffIp, isImmune := s.cache.IsImmune(profileUUID.String(), source.Addr)
+
+	if isCached && diffIp && isImmune {
+		return E.New("UUID ", profileUUID, " is paired with other ip")
+	}
+	if !isCached || (diffIp && !isImmune) {
+		rctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		body := map[string]interface{}{
+			"uuid": profileUUID.String(),
+			"ip":   source.AddrString(),
+		}
+		data, err := json.Marshal(body)
+
+		if err != nil {
+			return E.New("JSON error")
+		}
+
+		req, err := http.NewRequestWithContext(rctx, "POST", s.fetchURL, bytes.NewBuffer(data))
+
+		if err != nil {
+			return E.New("Request error: ", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+
+		if err != nil {
+			return E.New("Fetching error: ", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return E.New("UUID ", profileUUID, " is not allowed")
+		}
+	}
+	s.cache.Pair(profileUUID.String(), source.Addr)
+
+	user := profileUUID.String()
+
 	ctx = auth.ContextWithUser(ctx, user)
-	userFlow := s.userFlow[user]
+	userFlow := "xtls-rprx-vision"
 	if request.Flow == FlowVision && request.Command == vmess.NetworkUDP {
 		return E.New(FlowVision, " flow does not support UDP")
 	} else if request.Flow != userFlow {

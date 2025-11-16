@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/sagernet/sing-vmess"
+	vmess "github.com/Overwhelmed44/dynamic-vless"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"

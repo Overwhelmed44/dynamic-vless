@@ -1,22 +1,13 @@
-# sing-vmess
+# dynamic-vless
 
-Some confusing protocol.
+VLESS with remote user fetching
 
 ### Features
 
-100% compatible with `v2ray-core`.
+- Fetch users from remote (with caching)
+- One IP per UUID at a time
 
-* Stream length chunk with padding and masking
-* AEAD length chunk with padding
-* Stream chunk
-* AEAD chunk
-* Legacy client
-* AEAD client
-* Legacy server
-* AEAD server
+### Environment variables
 
-Extra features:
-
-* Mux server
-* XUDP client
-* VLESS client
+- CACHE_SIZE (default: 1000)
+- FETCH_URL
