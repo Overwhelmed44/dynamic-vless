@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
@@ -25,12 +26,13 @@ import (
 )
 
 type Service[T comparable] struct {
-	userMap  map[[16]byte]T
-	userFlow map[T]string
-	logger   logger.Logger
-	handler  Handler
-	cache    *ProfileCache
-	fetchURL string
+	userMap   map[[16]byte]T
+	userFlow  map[T]string
+	logger    logger.Logger
+	handler   Handler
+	cache     *ProfileCache
+	fetchURL  string
+	apiSecret []byte
 }
 
 type Handler interface {
@@ -44,12 +46,17 @@ func NewService[T comparable](logger logger.Logger, handler Handler) *Service[T]
 		cache = 1000
 	}
 	fetchURL := os.Getenv("FETCH_URL")
+	apiSecret, err := hex.DecodeString(os.Getenv("API_SECRET_KEY"))
+	if err != nil {
+		apiSecret = []byte("")
+	}
 
 	return &Service[T]{
-		logger:   logger,
-		handler:  handler,
-		cache:    NewProfileCache(cache),
-		fetchURL: fetchURL,
+		logger:    logger,
+		handler:   handler,
+		cache:     NewProfileCache(cache),
+		fetchURL:  fetchURL,
+		apiSecret: apiSecret,
 	}
 }
 
@@ -108,6 +115,12 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 		}
 
 		req.Header.Set("Content-Type", "application/json")
+		token, err := CreateAccessToken(s.apiSecret)
+		if err != nil {
+			return E.New("Token creation error: ", err)
+		}
+		req.Header.Set("Authorization", token)
+
 		client := &http.Client{}
 		resp, err := client.Do(req)
 
