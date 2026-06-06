@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	vmess "github.com/Overwhelmed44/dynamic-vless"
@@ -26,13 +27,14 @@ import (
 )
 
 type Service[T comparable] struct {
-	userMap   map[[16]byte]T
-	userFlow  map[T]string
-	logger    logger.Logger
-	handler   Handler
-	cache     *ProfileCache
-	fetchURL  string
-	apiSecret []byte
+	userMap    map[[16]byte]T
+	userFlow   map[T]string
+	logger     logger.Logger
+	handler    Handler
+	cache      *ProfileCache
+	fetchURL   string
+	apiSecret  []byte
+	masterUUID string
 }
 
 type Handler interface {
@@ -50,13 +52,15 @@ func NewService[T comparable](logger logger.Logger, handler Handler) *Service[T]
 	if err != nil {
 		apiSecret = []byte("")
 	}
+	masterUUID := strings.ReplaceAll(os.Getenv("MASTER_UUID"), "-", "")
 
 	return &Service[T]{
-		logger:    logger,
-		handler:   handler,
-		cache:     NewProfileCache(cache),
-		fetchURL:  fetchURL,
-		apiSecret: apiSecret,
+		logger:     logger,
+		handler:    handler,
+		cache:      NewProfileCache(cache),
+		fetchURL:   fetchURL,
+		apiSecret:  apiSecret,
+		masterUUID: masterUUID,
 	}
 }
 
@@ -88,13 +92,13 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 		return E.New()
 	}
 
-	isCached := s.cache.IsCached(profileUUID.String())
-	if !isCached {
+	asString := profileUUID.String()
+	if (strings.ReplaceAll(asString, "-", "") != s.masterUUID) && (!s.cache.IsCached(asString)) {
 		rctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
 		body := map[string]interface{}{
-			"uuid": profileUUID.String(),
+			"uuid": asString,
 			"ip":   source.AddrString(),
 		}
 		data, err := json.Marshal(body)
@@ -127,9 +131,9 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 			}
 		}
 	}
-	s.cache.Pair(profileUUID.String(), source.Addr)
+	s.cache.Pair(asString, source.Addr)
 
-	user := profileUUID.String()
+	user := asString
 
 	ctx = auth.ContextWithUser(ctx, user)
 	userFlow := request.Flow
