@@ -89,12 +89,7 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 	}
 
 	isCached := s.cache.IsCached(profileUUID.String())
-	diffIp, isImmune := s.cache.IsImmune(profileUUID.String(), source.Addr)
-
-	if isCached && diffIp && isImmune {
-		return E.New("UUID ", profileUUID, " is paired with other ip")
-	}
-	if !isCached || (diffIp && !isImmune) {
+	if !isCached {
 		rctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
@@ -124,13 +119,12 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 		client := &http.Client{}
 		resp, err := client.Do(req)
 
-		if err != nil {
-			return E.New("Fetching error: ", err)
-		}
-		resp.Body.Close()
+		if err == nil {
+			resp.Body.Close()
 
-		if resp.StatusCode != 200 {
-			return E.New("UUID ", profileUUID, " is not allowed")
+			if resp.StatusCode == 401 {
+				return E.New("UUID ", profileUUID, " is not allowed")
+			}
 		}
 	}
 	s.cache.Pair(profileUUID.String(), source.Addr)
@@ -138,7 +132,8 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 	user := profileUUID.String()
 
 	ctx = auth.ContextWithUser(ctx, user)
-	userFlow := "xtls-rprx-vision"
+	userFlow := request.Flow
+
 	if request.Flow == FlowVision && request.Command == vmess.NetworkUDP {
 		return E.New(FlowVision, " flow does not support UDP")
 	} else if request.Flow != userFlow {
