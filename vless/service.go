@@ -118,7 +118,7 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 		if err != nil {
 			return E.New("Token creation error: ", err)
 		}
-		req.Header.Set("Authorization", token)
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
@@ -127,11 +127,13 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 			resp.Body.Close()
 
 			if resp.StatusCode == 401 {
+				s.cache.Pair(asString, source.Addr, false)
+
 				return E.New("UUID ", profileUUID, " is not allowed")
 			}
 		}
 	}
-	s.cache.Pair(asString, source.Addr)
+	s.cache.Pair(asString, source.Addr, true)
 
 	user := asString
 

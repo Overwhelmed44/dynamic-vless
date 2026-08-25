@@ -37,11 +37,17 @@ func (c *ProfileCache) IsCached(uuid string) bool {
 	return false
 }
 
-func (c *ProfileCache) Pair(uuid string, ip netip.Addr) {
+func (c *ProfileCache) Pair(uuid string, ip netip.Addr, ok bool) {
+	if ok {
+		dur := time.Minute * time.Duration(10)
+	} else {
+		dur := time.Second * time.Duration(5)
+	}
+
 	if !c.IsCached(uuid) {
 		c.lru.Add(uuid, session{
 			ip:        ip,
-			expiresAt: time.Now().UTC().Add(time.Minute * time.Duration(10)),
+			expiresAt: time.Now().UTC().Add(dur),
 		})
 	}
 }
