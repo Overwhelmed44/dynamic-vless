@@ -38,10 +38,12 @@ func (c *ProfileCache) IsCached(uuid string) bool {
 }
 
 func (c *ProfileCache) Pair(uuid string, ip netip.Addr, ok bool) {
+	var dur time.Duration
+
 	if ok {
-		dur := time.Minute * time.Duration(10)
+		dur = time.Minute * time.Duration(10)
 	} else {
-		dur := time.Second * time.Duration(5)
+		dur = time.Second * time.Duration(5)
 	}
 
 	if !c.IsCached(uuid) {
